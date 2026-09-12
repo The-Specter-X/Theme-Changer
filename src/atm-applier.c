@@ -206,6 +206,22 @@ write_current_theme(const gchar *id, GError **error)
     return g_file_set_contents(path, id, -1, error);
 }
 
+static gboolean
+clear_current_theme(GError **error)
+{
+    g_autofree gchar *directory = get_state_directory();
+    g_autofree gchar *path = g_build_filename(directory, "current", NULL);
+
+    if (g_remove(path) == 0 || errno == ENOENT)
+        return TRUE;
+    g_set_error(error,
+                G_IO_ERROR,
+                g_io_error_from_errno(errno),
+                "Cannot clear current theme marker: %s",
+                g_strerror(errno));
+    return FALSE;
+}
+
 gboolean
 atm_applier_apply(const AtmTheme *theme,
                   AtmComponent requested,
@@ -289,8 +305,12 @@ atm_applier_apply(const AtmTheme *theme,
     }
 
     g_settings_sync();
-    if (!write_current_theme(theme->id, error))
+    if (components == (atm_theme_get_components(theme) & ~ATM_COMPONENT_LOCK)) {
+        if (!write_current_theme(theme->id, error))
+            goto rollback;
+    } else if (!clear_current_theme(error)) {
         goto rollback;
+    }
     return TRUE;
 
 rollback:
@@ -335,7 +355,6 @@ atm_applier_restore(GError **error)
     g_autoptr(GSettings) background = NULL;
     g_autoptr(GSettings) portal = NULL;
     g_autofree gchar *previous_theme = NULL;
-    g_autofree gchar *current_path = g_build_filename(directory, "current", NULL);
 
     if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
         g_set_error(error,
@@ -377,12 +396,7 @@ atm_applier_restore(GError **error)
     if (previous_theme != NULL) {
         if (!write_current_theme(previous_theme, error))
             return FALSE;
-    } else if (g_remove(current_path) != 0 && errno != ENOENT) {
-        g_set_error(error,
-                    G_IO_ERROR,
-                    g_io_error_from_errno(errno),
-                    "Cannot clear current theme marker: %s",
-                    g_strerror(errno));
+    } else if (!clear_current_theme(error)) {
         return FALSE;
     }
     return TRUE;

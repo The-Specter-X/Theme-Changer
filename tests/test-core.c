@@ -127,6 +127,10 @@ test_apply_and_restore(void)
     g_assert_nonnull(theme);
     g_assert_true(atm_applier_apply(theme, ATM_COMPONENT_ALL, &error));
     g_assert_no_error(error);
+    {
+        g_autofree gchar *current = atm_applier_get_current_theme_id();
+        g_assert_cmpstr(current, ==, "test-night");
+    }
 
     interface = g_settings_new("org.cinnamon.desktop.interface");
     cinnamon = g_settings_new("org.cinnamon.theme");
@@ -172,6 +176,17 @@ test_apply_and_restore(void)
     ASSERT_SETTING(portal, "color-scheme", "default");
     ASSERT_SETTING(portal, "accent-rgb", "");
     g_assert_null(atm_applier_get_current_theme_id());
+
+    g_assert_true(atm_applier_apply(theme, ATM_COMPONENT_WALLPAPER, &error));
+    g_assert_no_error(error);
+    g_assert_null(atm_applier_get_current_theme_id());
+    ASSERT_SETTING(interface, "gtk-theme", "InitialGtk");
+    g_clear_pointer(&value, g_free);
+    value = g_settings_get_string(background, "picture-uri");
+    g_assert_true(g_str_has_suffix(value, "/1-background/wallpaper.svg"));
+    g_assert_true(atm_applier_restore(&error));
+    g_assert_no_error(error);
+    ASSERT_SETTING(background, "picture-uri", "file:///initial.svg");
 #undef ASSERT_SETTING
 }
 

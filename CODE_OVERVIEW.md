@@ -116,6 +116,10 @@ The applier verifies that every required schema/key exists and is writable.
 This intentionally targets Axionis/Cinnamon rather than hiding platform
 differences behind a generic abstraction.
 
+A complete apply records the bundle as current. A partial `--only` apply clears
+that label because the result is a deliberate mixed composition; undo still
+restores the exact previous values and current-theme label.
+
 ## Why component 6 is tied to component 3
 
 Cinnamon Screensaver retrieves the active named GTK theme provider and searches
