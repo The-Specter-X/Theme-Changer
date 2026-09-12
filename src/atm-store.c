@@ -78,9 +78,9 @@ scan_root(const gchar *root, GHashTable *themes)
             continue;
         theme = atm_theme_load(path, &local_error);
         if (theme == NULL) {
-            g_warning("Ignoring invalid theme at %s: %s",
-                      path,
-                      local_error != NULL ? local_error->message : "unknown error");
+            g_debug("Ignoring invalid theme at %s: %s",
+                    path,
+                    local_error != NULL ? local_error->message : "unknown error");
             continue;
         }
         g_hash_table_replace(themes, g_strdup(theme->id), theme);
