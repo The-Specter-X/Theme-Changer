@@ -1,7 +1,7 @@
 desktop_file = configure_file(
   input: 'io.axionis.ThemeManager.desktop.in',
   output: 'io.axionis.ThemeManager.desktop',
-  configuration: configuration_data(),
+  copy: true,
   install: true,
   install_dir: datadir / 'applications',
 )

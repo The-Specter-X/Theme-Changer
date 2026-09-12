@@ -30,7 +30,7 @@ jobs:
       - name: Validate desktop integration
         run: |
           desktop-file-validate build/data/io.axionis.ThemeManager.desktop
-          appstreamcli validate data/io.axionis.ThemeManager.metainfo.xml
+          appstreamcli validate --no-net data/io.axionis.ThemeManager.metainfo.xml
       - name: Test staged install
         run: meson install -C build --destdir "$PWD/stage"
 
