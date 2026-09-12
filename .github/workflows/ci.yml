@@ -47,8 +47,12 @@ jobs:
             libxapp-dev meson ninja-build pkg-config
       - name: Build Debian package
         run: dpkg-buildpackage --no-sign --build=binary
+      - name: Collect Debian packages
+        run: |
+          mkdir -p artifacts
+          cp ../*.deb artifacts/
       - uses: actions/upload-artifact@v4
         with:
           name: axionis-theme-manager-debian
-          path: ../*.deb
+          path: artifacts/*.deb
           if-no-files-found: error
