@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.axionis.ThemeManager</id>
+  <name>Axionis Theme Manager</name>
+  <developer_name>Axionis Project</developer_name>
+  <summary>Apply coordinated Cinnamon appearance themes</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      Axionis Theme Manager applies trusted, declarative appearance bundles for
+      Cinnamon, GTK and XApps. Bundles can include a desktop theme, application
+      theme, icons, cursors, wallpaper, screen-lock styling and the preferred
+      light or dark appearance.
+    </p>
+    <p>
+      Theme imports reject executable content. Applying a theme does not run
+      scripts and does not require administrator privileges.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.axionis.ThemeManager.desktop</launchable>
+  <provides>
+    <binary>axionis-theme-manager</binary>
+    <binary>axionis-theme</binary>
+  </provides>
+  <url type="homepage">https://github.com/The-Specter-X/Theme-Changer</url>
+  <releases>
+    <release version="0.1.0" date="2026-09-12"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>

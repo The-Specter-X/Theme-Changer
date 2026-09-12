@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.cinnamon.desktop.interface" path="/org/cinnamon/desktop/interface/">
+    <key name="gtk-theme" type="s"><default>'InitialGtk'</default></key>
+    <key name="icon-theme" type="s"><default>'InitialIcons'</default></key>
+    <key name="cursor-theme" type="s"><default>'InitialCursor'</default></key>
+    <key name="cursor-size" type="i"><default>32</default></key>
+  </schema>
+  <schema id="org.cinnamon.theme" path="/org/cinnamon/theme/">
+    <key name="name" type="s"><default>'InitialCinnamon'</default></key>
+  </schema>
+  <schema id="org.cinnamon.desktop.background" path="/org/cinnamon/desktop/background/">
+    <key name="picture-uri" type="s"><default>'file:///initial.svg'</default></key>
+  </schema>
+  <schema id="org.x.apps.portal" path="/org/x/apps/portal/">
+    <key name="color-scheme" type="s"><default>'default'</default></key>
+    <key name="accent-rgb" type="s"><default>''</default></key>
+  </schema>
+</schemalist>

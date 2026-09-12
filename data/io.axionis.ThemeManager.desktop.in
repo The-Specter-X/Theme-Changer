@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Axionis Theme Manager
+Comment=Apply a complete Axionis appearance theme
+Exec=axionis-theme-manager
+Icon=io.axionis.ThemeManager
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;GTK;
+Keywords=theme;appearance;wallpaper;icons;cursor;cinnamon;
+StartupNotify=true
+DBusActivatable=false

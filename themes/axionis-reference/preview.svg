@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#18263d"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <rect y="500" width="960" height="40" fill="#0b1525"/>
+  <circle cx="28" cy="520" r="11" fill="#00b7d6"/>
+  <rect x="225" y="95" width="510" height="350" rx="12" fill="#111c2d" stroke="#31445e"/>
+  <rect x="225" y="95" width="510" height="44" rx="12" fill="#18263d"/>
+  <circle cx="258" cy="117" r="7" fill="#ff657a"/>
+  <circle cx="282" cy="117" r="7" fill="#ffc857"/>
+  <circle cx="306" cy="117" r="7" fill="#4fd6a0"/>
+  <path d="M422 345 480 215l58 130h-34l-12-29h-27l-12 29Zm54-58h9l-5-13Z" fill="#00b7d6"/>
+  <text x="480" y="385" text-anchor="middle" fill="#dce8f5" font-family="sans-serif" font-size="18">AXIONIS</text>
+</svg>
