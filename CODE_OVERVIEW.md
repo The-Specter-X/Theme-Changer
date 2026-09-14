@@ -17,8 +17,10 @@ flowchart TD
     Links --> Desktop
 ```
 
-The GUI and CLI share the same parser, validator, store and applier. There is no
-second implementation and no shell-command layer.
+The GUI and CLI share the same parser, validator, discovery, store and applier.
+There is no second implementation and no shell-command layer. The GUI's
+Components page reads current values through the applier and discovers choices
+through the shared discovery module.
 
 ## Source tree
 
@@ -26,9 +28,10 @@ second implementation and no shell-command layer.
 |---|---|
 | `src/atm-theme.[ch]` | Parse `theme.ini`, enforce schema 1, validate paths/assets, serialize theme JSON |
 | `src/atm-components.[ch]` | Stable numbered map and selector parser |
+| `src/atm-discovery.[ch]` | Discover and classify installed Cinnamon, GTK, icon and cursor themes |
 | `src/atm-store.[ch]` | Discover bundles, import with limits, expose asset directories safely |
 | `src/atm-applier.[ch]` | Snapshot, apply, rollback and restore through typed GSettings |
-| `src/atm-window.[ch]` | GTK 3/XApp preferences window, preview, import/apply/restore actions |
+| `src/atm-window.[ch]` | Two-page GTK 3/XApp GUI: bundle selection and installed-component mixer |
 | `src/atm-cli.c` | Agent-friendly list/map/validate/apply/restore interface |
 | `src/main.c` | `GtkApplication` entry point |
 | `data/` | Desktop entry, AppStream metadata and application icon |
@@ -62,6 +65,7 @@ sequenceDiagram
     U->>A: apply(theme, component mask)
     A->>S: expose packaged components
     S-->>A: safe links or conflict
+    A->>A: verify referenced themes exist
     A->>G: read previous values
     A->>A: write previous.ini
     A->>G: write selected values
@@ -135,6 +139,7 @@ activated when component 3 is applied.
 | Invalid manifest or escaping path | Bundle is not loaded/imported |
 | Executable, symlink or special imported content | Import is rejected |
 | Name collision in standard theme/icon directories | Apply stops; existing content is preserved |
+| Referenced system theme is missing/incomplete | Apply stops and names the missing category and theme |
 | Missing/locked Cinnamon schema key | Apply stops with the exact schema/key error |
 | GSettings write failure after snapshot | Previous settings are restored |
 | Missing undo snapshot | Restore returns a specific non-destructive error |
@@ -143,8 +148,9 @@ activated when component 3 is applied.
 
 `tests/org.axionis.test.gschema.xml` supplies isolated schemas and Meson runs the
 test executable with the in-memory GSettings backend. Tests cover valid parsing,
-path traversal rejection, stable selector behavior, discovery, executable
-content rejection, complete apply, and undo. CI also builds the Debian package
+path traversal rejection, stable selector behavior, installed-theme discovery,
+missing external reference rejection, executable content rejection, complete
+apply, and undo. CI also builds the Debian package
 so installed paths and declared dependencies are exercised.
 
 ## Adding a component in a later schema

@@ -1,5 +1,6 @@
 #include "atm-applier.h"
 #include "atm-components.h"
+#include "atm-discovery.h"
 #include "atm-store.h"
 #include "atm-theme.h"
 
@@ -62,6 +63,54 @@ test_component_selectors(void)
     g_clear_error(&error);
     g_assert_false(atm_component_parse_list("99", &components, &error));
     g_assert_nonnull(error);
+}
+
+
+static gboolean
+ptr_array_contains_string(GPtrArray *array, const gchar *value)
+{
+    guint i;
+
+    for (i = 0; i < array->len; i++) {
+        if (g_strcmp0(g_ptr_array_index(array, i), value) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void
+test_discovery_and_missing_reference(void)
+{
+    g_autofree gchar *gtk_dir =
+        g_build_filename(g_get_user_data_dir(),
+                         "themes",
+                         "DiscoveredGtk",
+                         "gtk-3.0",
+                         NULL);
+    g_autofree gchar *gtk_css =
+        g_build_filename(gtk_dir, "gtk.css", NULL);
+    g_autoptr(GPtrArray) themes = NULL;
+    g_autoptr(GError) error = NULL;
+    AtmTheme missing = { 0 };
+
+    g_assert_cmpint(g_mkdir_with_parents(gtk_dir, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(gtk_css,
+                                     ".csstage { color: #fff; }\n",
+                                     -1,
+                                     &error));
+    g_assert_no_error(error);
+
+    themes = atm_discovery_list(ATM_DISCOVERY_GTK);
+    g_assert_true(ptr_array_contains_string(themes, "DiscoveredGtk"));
+    g_assert_true(atm_discovery_has(ATM_DISCOVERY_GTK, "DiscoveredGtk"));
+    g_assert_true(atm_discovery_gtk_has_lock_style("DiscoveredGtk"));
+
+    missing.id = (gchar *) "missing-reference";
+    missing.name = (gchar *) "Missing reference";
+    missing.directory = test_root;
+    missing.gtk_theme = (gchar *) "ThemeThatCannotExist";
+    g_assert_false(atm_applier_apply(&missing, ATM_COMPONENT_GTK, &error));
+    g_assert_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND);
 }
 
 static void
@@ -213,6 +262,8 @@ main(int argc, char **argv)
     g_test_add_func("/theme/load-valid", test_theme_load_valid);
     g_test_add_func("/theme/reject-traversal", test_theme_rejects_traversal);
     g_test_add_func("/components/selectors", test_component_selectors);
+    g_test_add_func("/discovery/installed-and-missing",
+                    test_discovery_and_missing_reference);
     g_test_add_func("/store/priority", test_store_priority);
     g_test_add_func("/store/reject-executable", test_store_rejects_executable_content);
     g_test_add_func("/applier/apply-restore", test_apply_and_restore);

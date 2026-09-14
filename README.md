@@ -5,8 +5,10 @@ coordinated Cinnamon desktop appearance from one declarative bundle. It is
 tailored for Axionis, an LMDE-based Cinnamon distribution, but does not require
 root privileges and does not run an AI model.
 
-The GUI is for people. The companion `axionis-theme` CLI and stable numbered
-component map are for scripts and AI agents.
+The GUI is for people. It provides both coordinated global bundles and a
+component mixer for installed Cinnamon, GTK, icon and cursor themes. The
+companion `axionis-theme` CLI and stable numbered component map are for
+scripts and AI agents.
 
 ## Scope
 
@@ -36,6 +38,32 @@ Light/dark is a preference advertised to applications that support the desktop
 portal. It is not display brightness, and it does not recolor a GTK or Cinnamon
 theme by itself.
 
+## Graphical interface
+
+The **Global Themes** page previews imported bundles and exposes checkboxes for
+each component present in the selected bundle. A complete bundle can therefore
+be applied as one coordinated theme, or only selected parts can be applied. The
+page reports system themes referenced by a bundle that are missing before the
+user presses Apply.
+
+The **Components** page is the unified controller for the current desktop. It
+discovers compatible themes from the standard user and system data locations
+and provides controls for:
+
+- Cinnamon desktop theme
+- GTK 3/XApp application theme
+- Icon theme
+- Cursor theme and logical size
+- Wallpaper
+- Light/dark preference
+- Optional accent preference
+- Screen-lock styling status for the selected GTK theme
+
+Applying a custom composition takes one undo snapshot. **Restore Previous**
+restores every value changed by the most recent bundle or custom application.
+The screen-lock row is informational because Cinnamon Screensaver consumes
+`.csstage` rules from the selected GTK theme; it has no independent theme key.
+
 ## Storage
 
 An imported bundle has one canonical location:
@@ -54,7 +82,9 @@ configuration. Apply/undo state is kept separately in
 When a bundle carries a GTK/Cinnamon theme, icon theme, or cursor theme, the
 manager exposes it with a symlink below `$XDG_DATA_HOME/themes` or
 `$XDG_DATA_HOME/icons`. Cinnamon can discover it without duplicating any files.
-Existing files or links are never overwritten.
+Existing files or links are never overwritten. A referenced system theme is
+checked before applying; missing or incomplete themes now produce an explicit
+error instead of a silent desktop fallback.
 
 ## Build on Axionis/LMDE
 

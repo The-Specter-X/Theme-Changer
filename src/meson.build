@@ -3,6 +3,7 @@ core_sources = files(
   'atm-store.c',
   'atm-applier.c',
   'atm-components.c',
+  'atm-discovery.c',
 )
 
 core_lib = static_library(

@@ -99,6 +99,9 @@ that theme inside the bundle. Omit the path to reference a theme already
 installed by Axionis. A packaged Cinnamon theme must have
 `cinnamon/cinnamon.css`; packaged GTK themes must have `gtk-3.0/gtk.css`; icon
 and cursor themes must have `index.theme`; cursor themes also need `cursors/`.
+When a path is omitted, the named system theme must already be discoverable in
+a standard XDG, system, or legacy per-user theme directory. Apply fails with a
+specific error when that external reference is missing or incomplete.
 
 `CursorSize` is an integer from 16 through 128.
 

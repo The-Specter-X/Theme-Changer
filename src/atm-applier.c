@@ -1,5 +1,6 @@
 #include "atm-applier.h"
 #include "atm-store.h"
+#include "atm-discovery.h"
 
 #include <errno.h>
 #include <glib/gstdio.h>
@@ -222,10 +223,11 @@ clear_current_theme(GError **error)
     return FALSE;
 }
 
-gboolean
-atm_applier_apply(const AtmTheme *theme,
-                  AtmComponent requested,
-                  GError **error)
+static gboolean
+apply_internal(const AtmTheme *theme,
+               AtmComponent requested,
+               gboolean record_bundle,
+               GError **error)
 {
     static const gchar *interface_keys[] = {
         "gtk-theme", "icon-theme", "cursor-theme", "cursor-size", NULL
@@ -255,6 +257,8 @@ atm_applier_apply(const AtmTheme *theme,
     }
 
     if (!atm_store_expose_components(theme, components, error))
+        return FALSE;
+    if (!atm_discovery_validate_theme(theme, components, error))
         return FALSE;
 
     interface = settings_for(INTERFACE_SCHEMA, interface_keys, error);
@@ -305,7 +309,8 @@ atm_applier_apply(const AtmTheme *theme,
     }
 
     g_settings_sync();
-    if (components == (atm_theme_get_components(theme) & ~ATM_COMPONENT_LOCK)) {
+    if (record_bundle &&
+        components == (atm_theme_get_components(theme) & ~ATM_COMPONENT_LOCK)) {
         if (!write_current_theme(theme->id, error))
             goto rollback;
     } else if (!clear_current_theme(error)) {
@@ -323,6 +328,55 @@ rollback:
     return FALSE;
 }
 
+gboolean
+atm_applier_apply(const AtmTheme *theme,
+                  AtmComponent components,
+                  GError **error)
+{
+    return apply_internal(theme, components, TRUE, error);
+}
+
+gboolean
+atm_applier_apply_custom(const AtmAppearanceSettings *settings, GError **error)
+{
+    AtmTheme theme = { 0 };
+    AtmComponent components;
+    g_autofree gchar *wallpaper = NULL;
+    g_autofree gchar *directory = NULL;
+    g_autofree gchar *basename = NULL;
+
+    g_return_val_if_fail(settings != NULL, FALSE);
+
+    if (settings->wallpaper_path != NULL) {
+        wallpaper = g_canonicalize_filename(settings->wallpaper_path, NULL);
+        if (!g_file_test(wallpaper, G_FILE_TEST_IS_REGULAR)) {
+            g_set_error(error,
+                        G_IO_ERROR,
+                        G_IO_ERROR_NOT_FOUND,
+                        "Wallpaper file does not exist: %s",
+                        wallpaper);
+            return FALSE;
+        }
+        directory = g_path_get_dirname(wallpaper);
+        basename = g_path_get_basename(wallpaper);
+    }
+
+    theme.id = (gchar *) "custom-composition";
+    theme.name = (gchar *) "Custom appearance";
+    theme.directory = directory != NULL ? directory : (gchar *) "/";
+    theme.wallpaper = basename;
+    theme.cinnamon_theme = settings->cinnamon_theme;
+    theme.gtk_theme = settings->gtk_theme;
+    theme.icon_theme = settings->icon_theme;
+    theme.cursor_theme = settings->cursor_theme;
+    theme.cursor_size = settings->cursor_size;
+    theme.color_scheme = settings->color_scheme;
+    theme.accent_rgb = settings->accent_rgb;
+
+    components = atm_theme_get_components(&theme);
+    return apply_internal(&theme, components, FALSE, error);
+}
+
 static gboolean
 restore_optional_string(GKeyFile *snapshot,
                         const gchar *snapshot_key,
@@ -336,6 +390,59 @@ restore_optional_string(GKeyFile *snapshot,
         return TRUE;
     value = g_key_file_get_string(snapshot, "Settings", snapshot_key, error);
     return value != NULL && set_string_checked(settings, settings_key, value, error);
+}
+
+AtmAppearanceSettings *
+atm_applier_read_current(GError **error)
+{
+    static const gchar *interface_keys[] = {
+        "gtk-theme", "icon-theme", "cursor-theme", "cursor-size", NULL
+    };
+    static const gchar *cinnamon_keys[] = { "name", NULL };
+    static const gchar *background_keys[] = { "picture-uri", NULL };
+    static const gchar *portal_keys[] = { "color-scheme", "accent-rgb", NULL };
+    g_autoptr(GSettings) interface = NULL;
+    g_autoptr(GSettings) cinnamon = NULL;
+    g_autoptr(GSettings) background = NULL;
+    g_autoptr(GSettings) portal = NULL;
+    g_autoptr(AtmAppearanceSettings) current = g_new0(AtmAppearanceSettings, 1);
+    g_autofree gchar *wallpaper_uri = NULL;
+
+    interface = settings_for(INTERFACE_SCHEMA, interface_keys, error);
+    cinnamon = settings_for(CINNAMON_SCHEMA, cinnamon_keys, error);
+    background = settings_for(BACKGROUND_SCHEMA, background_keys, error);
+    portal = settings_for(PORTAL_SCHEMA, portal_keys, error);
+    if (interface == NULL || cinnamon == NULL ||
+        background == NULL || portal == NULL)
+        return NULL;
+
+    current->gtk_theme = g_settings_get_string(interface, "gtk-theme");
+    current->icon_theme = g_settings_get_string(interface, "icon-theme");
+    current->cursor_theme = g_settings_get_string(interface, "cursor-theme");
+    current->cursor_size = g_settings_get_int(interface, "cursor-size");
+    current->cinnamon_theme = g_settings_get_string(cinnamon, "name");
+    current->color_scheme = g_settings_get_string(portal, "color-scheme");
+    current->accent_rgb = g_settings_get_string(portal, "accent-rgb");
+
+    wallpaper_uri = g_settings_get_string(background, "picture-uri");
+    if (wallpaper_uri != NULL && *wallpaper_uri != '\0')
+        current->wallpaper_path = g_filename_from_uri(wallpaper_uri, NULL, NULL);
+    return g_steal_pointer(&current);
+}
+
+void
+atm_appearance_settings_free(AtmAppearanceSettings *settings)
+{
+    if (settings == NULL)
+        return;
+    g_free(settings->cinnamon_theme);
+    g_free(settings->gtk_theme);
+    g_free(settings->icon_theme);
+    g_free(settings->cursor_theme);
+    g_free(settings->wallpaper_path);
+    g_free(settings->color_scheme);
+    g_free(settings->accent_rgb);
+    g_free(settings);
 }
 
 gboolean
