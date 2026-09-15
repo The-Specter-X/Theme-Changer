@@ -21,7 +21,7 @@ core_dep = declare_dependency(
 
 executable(
   'axionis-theme-manager',
-  ['main.c', 'atm-window.c'],
+  ['main.c', 'atm-window.c', 'atm-preview.c'],
   include_directories: include_directories('..'),
   dependencies: [core_dep, gtk_dep, xapp_dep],
   install: true,

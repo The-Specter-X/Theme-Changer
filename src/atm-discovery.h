@@ -12,6 +12,7 @@ typedef enum {
 } AtmDiscoveryKind;
 
 GPtrArray *atm_discovery_list(AtmDiscoveryKind kind);
+gchar *atm_discovery_get_path(AtmDiscoveryKind kind, const gchar *name);
 gboolean atm_discovery_has(AtmDiscoveryKind kind, const gchar *name);
 gboolean atm_discovery_validate_theme(const AtmTheme *theme,
                                       AtmComponent components,

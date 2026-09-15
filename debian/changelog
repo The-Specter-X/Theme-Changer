@@ -1,3 +1,13 @@
+axionis-theme-manager (0.3.0) unstable; urgency=medium
+
+  * Add visual grid pickers for Cinnamon, GTK, icon and cursor themes.
+  * Use Cinnamon-compatible theme thumbnails and shared fallbacks.
+  * Preview a themed folder icon for every icon theme.
+  * Add pending wallpaper preview and lazy thumbnail loading.
+  * Discover Cinnamon's built-in desktop theme.
+
+ -- Specter <thespecter@tuta.com>  Tue, 15 Sep 2026 08:00:00 +0000
+
 axionis-theme-manager (0.2.0) unstable; urgency=medium
 
   * Add a complete GUI component mixer.

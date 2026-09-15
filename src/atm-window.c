@@ -5,6 +5,7 @@
 #include "atm-applier.h"
 #include "atm-components.h"
 #include "atm-discovery.h"
+#include "atm-preview.h"
 #include "atm-store.h"
 
 typedef struct {
@@ -21,6 +22,27 @@ static const BundleOption bundle_options[] = {
     { ATM_COMPONENT_APPEARANCE, "7  Light/dark and accent" },
 };
 
+typedef struct _ThemeChooser ThemeChooser;
+typedef void (*ThemeChooserChanged)(ThemeChooser *chooser,
+                                    gpointer user_data);
+
+struct _ThemeChooser {
+    AtmDiscoveryKind kind;
+    GtkWidget *button;
+    GtkWidget *button_image;
+    GtkWidget *button_label;
+    GtkWidget *popover;
+    GtkWidget *flowbox;
+    GPtrArray *available;
+    GPtrArray *tiles;
+    gchar *selected;
+    guint preview_index;
+    guint idle_id;
+    gboolean loaded;
+    ThemeChooserChanged changed;
+    gpointer changed_data;
+};
+
 typedef struct {
     GtkWidget *window;
 
@@ -35,12 +57,13 @@ typedef struct {
     GPtrArray *themes;
     AtmTheme *selected;
 
-    GtkWidget *cinnamon_combo;
-    GtkWidget *gtk_combo;
-    GtkWidget *icon_combo;
-    GtkWidget *cursor_combo;
+    ThemeChooser *cinnamon_chooser;
+    ThemeChooser *gtk_chooser;
+    ThemeChooser *icon_chooser;
+    ThemeChooser *cursor_chooser;
     GtkWidget *cursor_size;
     GtkWidget *wallpaper_button;
+    GtkWidget *wallpaper_preview;
     GtkWidget *mode_combo;
     GtkWidget *accent_switch;
     GtkWidget *accent_button;
@@ -478,36 +501,301 @@ array_contains(GPtrArray *array, const gchar *value)
     return FALSE;
 }
 
-static void
-populate_combo(GtkComboBoxText *combo,
-               AtmDiscoveryKind kind,
-               const gchar *current)
+static const gchar *
+fallback_icon_name(AtmDiscoveryKind kind)
 {
-    g_autoptr(GPtrArray) values = atm_discovery_list(kind);
+    switch (kind) {
+    case ATM_DISCOVERY_CINNAMON:
+        return "preferences-desktop-theme";
+    case ATM_DISCOVERY_GTK:
+        return "applications-other";
+    case ATM_DISCOVERY_ICONS:
+        return "folder";
+    case ATM_DISCOVERY_CURSOR:
+        return "input-mouse";
+    default:
+        return "image-missing";
+    }
+}
+
+static void
+set_image_preview(GtkWidget *image,
+                  AtmDiscoveryKind kind,
+                  const gchar *name,
+                  gint width,
+                  gint height)
+{
+    g_autoptr(GdkPixbuf) pixbuf =
+        atm_preview_load(kind, name, width, height);
+
+    if (pixbuf != NULL)
+        gtk_image_set_from_pixbuf(GTK_IMAGE(image), pixbuf);
+    else {
+        gtk_image_set_from_icon_name(GTK_IMAGE(image),
+                                     fallback_icon_name(kind),
+                                     GTK_ICON_SIZE_DIALOG);
+        gtk_image_set_pixel_size(GTK_IMAGE(image), MIN(width, height));
+    }
+}
+
+static void
+theme_chooser_update_tiles(ThemeChooser *chooser)
+{
     guint i;
 
-    gtk_combo_box_text_remove_all(combo);
-    for (i = 0; i < values->len; i++) {
-        const gchar *value = g_ptr_array_index(values, i);
-        gtk_combo_box_text_append(combo, value, value);
-    }
-    if (current != NULL && *current != '\0' &&
-        !array_contains(values, current))
-        gtk_combo_box_text_append(combo, current, current);
+    for (i = 0; i < chooser->tiles->len; i++) {
+        GtkWidget *button = g_ptr_array_index(chooser->tiles, i);
+        const gchar *name = g_object_get_data(G_OBJECT(button),
+                                              "theme-name");
+        GtkStyleContext *context = gtk_widget_get_style_context(button);
 
-    if (current == NULL ||
-        !gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), current)) {
-        if (values->len > 0)
-            gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
+        if (g_strcmp0(name, chooser->selected) == 0)
+            gtk_style_context_add_class(context, "suggested-action");
+        else
+            gtk_style_context_remove_class(context, "suggested-action");
     }
+}
+
+static void
+theme_chooser_set_selected(ThemeChooser *chooser,
+                           const gchar *name,
+                           gboolean notify)
+{
+    if (g_strcmp0(chooser->selected, name) == 0 && !notify)
+        return;
+
+    g_free(chooser->selected);
+    chooser->selected = g_strdup(name);
+    gtk_label_set_text(GTK_LABEL(chooser->button_label),
+                       name != NULL ? name : "Choose a theme");
+    gtk_widget_set_tooltip_text(chooser->button, name);
+    set_image_preview(chooser->button_image,
+                      chooser->kind,
+                      name,
+                      chooser->kind == ATM_DISCOVERY_ICONS ||
+                      chooser->kind == ATM_DISCOVERY_CURSOR ? 48 : 72,
+                      48);
+    theme_chooser_update_tiles(chooser);
+
+    if (notify && chooser->changed != NULL)
+        chooser->changed(chooser, chooser->changed_data);
+}
+
+static void
+on_theme_tile_clicked(GtkButton *button, gpointer user_data)
+{
+    ThemeChooser *chooser = user_data;
+    const gchar *name = g_object_get_data(G_OBJECT(button),
+                                          "theme-name");
+
+    theme_chooser_set_selected(chooser, name, TRUE);
+    gtk_popover_popdown(GTK_POPOVER(chooser->popover));
+}
+
+static gboolean
+theme_chooser_load_next_preview(gpointer user_data)
+{
+    ThemeChooser *chooser = user_data;
+    GtkWidget *button;
+    GtkWidget *image;
+    const gchar *name;
+    gint width;
+    gint height;
+
+    if (chooser->preview_index >= chooser->tiles->len) {
+        chooser->idle_id = 0;
+        return G_SOURCE_REMOVE;
+    }
+
+    button = g_ptr_array_index(chooser->tiles, chooser->preview_index++);
+    image = g_object_get_data(G_OBJECT(button), "preview-image");
+    name = g_object_get_data(G_OBJECT(button), "theme-name");
+    width = chooser->kind == ATM_DISCOVERY_ICONS ||
+            chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 140;
+    height = chooser->kind == ATM_DISCOVERY_ICONS ||
+             chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 80;
+    set_image_preview(image, chooser->kind, name, width, height);
+    return G_SOURCE_CONTINUE;
+}
+
+static void
+theme_chooser_clear_tiles(ThemeChooser *chooser)
+{
+    GList *children;
+    GList *cursor;
+
+    if (chooser->idle_id != 0) {
+        g_source_remove(chooser->idle_id);
+        chooser->idle_id = 0;
+    }
+    children = gtk_container_get_children(GTK_CONTAINER(chooser->flowbox));
+    for (cursor = children; cursor != NULL; cursor = cursor->next)
+        gtk_widget_destroy(GTK_WIDGET(cursor->data));
+    g_list_free(children);
+    g_ptr_array_set_size(chooser->tiles, 0);
+    g_clear_pointer(&chooser->available, g_ptr_array_unref);
+    chooser->preview_index = 0;
+    chooser->loaded = FALSE;
+}
+
+static GtkWidget *
+theme_tile_new(ThemeChooser *chooser, const gchar *name)
+{
+    GtkWidget *button = gtk_button_new();
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *image = gtk_image_new_from_icon_name(
+        fallback_icon_name(chooser->kind), GTK_ICON_SIZE_DIALOG);
+    GtkWidget *label = gtk_label_new(name);
+    gint width = chooser->kind == ATM_DISCOVERY_ICONS ||
+                 chooser->kind == ATM_DISCOVERY_CURSOR ? 112 : 168;
+
+    gtk_image_set_pixel_size(GTK_IMAGE(image),
+                             chooser->kind == ATM_DISCOVERY_ICONS ||
+                             chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 48);
+    gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
+    gtk_label_set_max_width_chars(GTK_LABEL(label), 20);
+    gtk_widget_set_tooltip_text(button, name);
+    gtk_widget_set_size_request(button, width, 118);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 6);
+    gtk_box_pack_start(GTK_BOX(box), image, TRUE, TRUE, 0);
+    gtk_box_pack_end(GTK_BOX(box), label, FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(button), box);
+    g_object_set_data_full(G_OBJECT(button),
+                           "theme-name",
+                           g_strdup(name),
+                           g_free);
+    g_object_set_data(G_OBJECT(button), "preview-image", image);
+    g_signal_connect(button,
+                     "clicked",
+                     G_CALLBACK(on_theme_tile_clicked),
+                     chooser);
+    return button;
+}
+
+static void
+on_theme_popover_show(GtkWidget *popover, gpointer user_data)
+{
+    ThemeChooser *chooser = user_data;
+    guint i;
+    (void) popover;
+
+    if (chooser->loaded)
+        return;
+    chooser->loaded = TRUE;
+    chooser->available = atm_discovery_list(chooser->kind);
+    if (chooser->selected != NULL &&
+        !array_contains(chooser->available, chooser->selected))
+        g_ptr_array_add(chooser->available, g_strdup(chooser->selected));
+
+    for (i = 0; i < chooser->available->len; i++) {
+        GtkWidget *button =
+            theme_tile_new(chooser,
+                           g_ptr_array_index(chooser->available, i));
+        gtk_flow_box_insert(GTK_FLOW_BOX(chooser->flowbox), button, -1);
+        g_ptr_array_add(chooser->tiles, button);
+    }
+    theme_chooser_update_tiles(chooser);
+    gtk_widget_show_all(chooser->flowbox);
+    if (chooser->tiles->len > 0)
+        chooser->idle_id =
+            g_idle_add(theme_chooser_load_next_preview, chooser);
+}
+
+static ThemeChooser *
+theme_chooser_new(AtmDiscoveryKind kind)
+{
+    ThemeChooser *chooser = g_new0(ThemeChooser, 1);
+    GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
+
+    chooser->kind = kind;
+    chooser->button = gtk_menu_button_new();
+    chooser->button_image = gtk_image_new();
+    chooser->button_label = gtk_label_new("Choose a theme");
+    chooser->popover = gtk_popover_new(chooser->button);
+    chooser->flowbox = gtk_flow_box_new();
+    chooser->tiles = g_ptr_array_new();
+
+    gtk_label_set_ellipsize(GTK_LABEL(chooser->button_label),
+                            PANGO_ELLIPSIZE_END);
+    gtk_label_set_max_width_chars(GTK_LABEL(chooser->button_label), 24);
+    gtk_widget_set_size_request(chooser->button, 270, 64);
+    gtk_box_pack_start(GTK_BOX(button_box),
+                       chooser->button_image,
+                       FALSE,
+                       FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(button_box),
+                       chooser->button_label,
+                       TRUE,
+                       TRUE,
+                       0);
+    gtk_container_add(GTK_CONTAINER(chooser->button), button_box);
+
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(chooser->flowbox),
+                                    GTK_SELECTION_NONE);
+    gtk_flow_box_set_homogeneous(GTK_FLOW_BOX(chooser->flowbox), TRUE);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(chooser->flowbox), 4);
+    gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(chooser->flowbox), 8);
+    gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(chooser->flowbox), 8);
+    gtk_container_set_border_width(GTK_CONTAINER(chooser->flowbox), 10);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(scroll),
+                                              700);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll),
+                                               420);
+    gtk_container_add(GTK_CONTAINER(scroll), chooser->flowbox);
+    gtk_container_add(GTK_CONTAINER(chooser->popover), scroll);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(chooser->button),
+                                chooser->popover);
+    g_signal_connect(chooser->popover,
+                     "show",
+                     G_CALLBACK(on_theme_popover_show),
+                     chooser);
+    return chooser;
+}
+
+static void
+theme_chooser_reload(ThemeChooser *chooser, const gchar *selected)
+{
+    theme_chooser_clear_tiles(chooser);
+    theme_chooser_set_selected(chooser, selected, FALSE);
+}
+
+static gchar *
+theme_chooser_dup_selected(ThemeChooser *chooser)
+{
+    return g_strdup(chooser->selected);
+}
+
+static void
+theme_chooser_set_changed(ThemeChooser *chooser,
+                          ThemeChooserChanged changed,
+                          gpointer user_data)
+{
+    chooser->changed = changed;
+    chooser->changed_data = user_data;
+}
+
+static void
+theme_chooser_free(ThemeChooser *chooser)
+{
+    if (chooser == NULL)
+        return;
+    if (chooser->idle_id != 0)
+        g_source_remove(chooser->idle_id);
+    g_clear_pointer(&chooser->available, g_ptr_array_unref);
+    g_clear_pointer(&chooser->tiles, g_ptr_array_unref);
+    g_free(chooser->selected);
+    g_free(chooser);
 }
 
 static void
 update_lock_status(WindowData *data)
 {
-    g_autofree gchar *gtk_theme =
-        gtk_combo_box_text_get_active_text(
-            GTK_COMBO_BOX_TEXT(data->gtk_combo));
+    const gchar *gtk_theme = data->gtk_chooser->selected;
     g_autofree gchar *message = NULL;
 
     if (gtk_theme == NULL) {
@@ -528,10 +816,42 @@ update_lock_status(WindowData *data)
 }
 
 static void
-on_gtk_combo_changed(GtkComboBox *combo, gpointer user_data)
+on_gtk_theme_changed(ThemeChooser *chooser, gpointer user_data)
 {
-    (void) combo;
+    (void) chooser;
     update_lock_status(user_data);
+}
+
+static void
+update_wallpaper_preview(WindowData *data)
+{
+    g_autofree gchar *path =
+        gtk_file_chooser_get_filename(
+            GTK_FILE_CHOOSER(data->wallpaper_button));
+    g_autoptr(GdkPixbuf) pixbuf = NULL;
+
+    if (path != NULL)
+        pixbuf = gdk_pixbuf_new_from_file_at_scale(path,
+                                                   96,
+                                                   60,
+                                                   TRUE,
+                                                   NULL);
+    if (pixbuf != NULL)
+        gtk_image_set_from_pixbuf(GTK_IMAGE(data->wallpaper_preview),
+                                  pixbuf);
+    else {
+        gtk_image_set_from_icon_name(GTK_IMAGE(data->wallpaper_preview),
+                                     "preferences-desktop-wallpaper",
+                                     GTK_ICON_SIZE_DIALOG);
+        gtk_image_set_pixel_size(GTK_IMAGE(data->wallpaper_preview), 48);
+    }
+}
+
+static void
+on_wallpaper_file_set(GtkFileChooserButton *button, gpointer user_data)
+{
+    (void) button;
+    update_wallpaper_preview(user_data);
 }
 
 static void
@@ -562,18 +882,14 @@ load_current_controls(WindowData *data)
         return;
     }
 
-    populate_combo(GTK_COMBO_BOX_TEXT(data->cinnamon_combo),
-                   ATM_DISCOVERY_CINNAMON,
-                   current->cinnamon_theme);
-    populate_combo(GTK_COMBO_BOX_TEXT(data->gtk_combo),
-                   ATM_DISCOVERY_GTK,
-                   current->gtk_theme);
-    populate_combo(GTK_COMBO_BOX_TEXT(data->icon_combo),
-                   ATM_DISCOVERY_ICONS,
-                   current->icon_theme);
-    populate_combo(GTK_COMBO_BOX_TEXT(data->cursor_combo),
-                   ATM_DISCOVERY_CURSOR,
-                   current->cursor_theme);
+    theme_chooser_reload(data->cinnamon_chooser,
+                           current->cinnamon_theme);
+    theme_chooser_reload(data->gtk_chooser,
+                           current->gtk_theme);
+    theme_chooser_reload(data->icon_chooser,
+                           current->icon_theme);
+    theme_chooser_reload(data->cursor_chooser,
+                           current->cursor_theme);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(data->cursor_size),
                               current->cursor_size);
 
@@ -584,6 +900,7 @@ load_current_controls(WindowData *data)
     else
         gtk_file_chooser_unselect_all(
             GTK_FILE_CHOOSER(data->wallpaper_button));
+    update_wallpaper_preview(data);
 
     if (current->color_scheme == NULL ||
         !gtk_combo_box_set_active_id(GTK_COMBO_BOX(data->mode_combo),
@@ -630,17 +947,13 @@ on_apply_custom_clicked(GtkButton *button, gpointer user_data)
     (void) button;
 
     settings->cinnamon_theme =
-        gtk_combo_box_text_get_active_text(
-            GTK_COMBO_BOX_TEXT(data->cinnamon_combo));
+        theme_chooser_dup_selected(data->cinnamon_chooser);
     settings->gtk_theme =
-        gtk_combo_box_text_get_active_text(
-            GTK_COMBO_BOX_TEXT(data->gtk_combo));
+        theme_chooser_dup_selected(data->gtk_chooser);
     settings->icon_theme =
-        gtk_combo_box_text_get_active_text(
-            GTK_COMBO_BOX_TEXT(data->icon_combo));
+        theme_chooser_dup_selected(data->icon_chooser);
     settings->cursor_theme =
-        gtk_combo_box_text_get_active_text(
-            GTK_COMBO_BOX_TEXT(data->cursor_combo));
+        theme_chooser_dup_selected(data->cursor_chooser);
     settings->cursor_size =
         gtk_spin_button_get_value_as_int(
             GTK_SPIN_BUTTON(data->cursor_size));
@@ -833,6 +1146,7 @@ create_components_page(WindowData *data)
     GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
     GtkWidget *list = gtk_list_box_new();
     GtkWidget *cursor_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *wallpaper_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *accent_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *apply_button = gtk_button_new_with_label("Apply Appearance");
@@ -841,25 +1155,29 @@ create_components_page(WindowData *data)
     GtkFileFilter *wallpaper_filter = gtk_file_filter_new();
     GtkWidget *heading;
 
-    data->cinnamon_combo = gtk_combo_box_text_new();
-    data->gtk_combo = gtk_combo_box_text_new();
-    data->icon_combo = gtk_combo_box_text_new();
-    data->cursor_combo = gtk_combo_box_text_new();
+    data->cinnamon_chooser =
+        theme_chooser_new(ATM_DISCOVERY_CINNAMON);
+    data->gtk_chooser =
+        theme_chooser_new(ATM_DISCOVERY_GTK);
+    data->icon_chooser =
+        theme_chooser_new(ATM_DISCOVERY_ICONS);
+    data->cursor_chooser =
+        theme_chooser_new(ATM_DISCOVERY_CURSOR);
     data->cursor_size =
         gtk_spin_button_new_with_range(16.0, 128.0, 1.0);
     data->wallpaper_button =
         gtk_file_chooser_button_new("Choose a wallpaper",
                                     GTK_FILE_CHOOSER_ACTION_OPEN);
+    data->wallpaper_preview =
+        gtk_image_new_from_icon_name("preferences-desktop-wallpaper",
+                                     GTK_ICON_SIZE_DIALOG);
     data->mode_combo = gtk_combo_box_text_new();
     data->accent_switch = gtk_switch_new();
     data->accent_button = gtk_color_button_new();
     data->lock_status = gtk_label_new("");
 
-    gtk_widget_set_size_request(data->cinnamon_combo, 260, -1);
-    gtk_widget_set_size_request(data->gtk_combo, 260, -1);
-    gtk_widget_set_size_request(data->icon_combo, 260, -1);
-    gtk_widget_set_size_request(data->cursor_combo, 200, -1);
-    gtk_widget_set_size_request(data->wallpaper_button, 260, -1);
+    gtk_widget_set_size_request(data->wallpaper_button, 210, -1);
+    gtk_widget_set_size_request(data->wallpaper_preview, 96, 60);
     gtk_widget_set_size_request(data->mode_combo, 260, -1);
     gtk_label_set_line_wrap(GTK_LABEL(data->lock_status), TRUE);
     gtk_label_set_max_width_chars(GTK_LABEL(data->lock_status), 38);
@@ -876,7 +1194,7 @@ create_components_page(WindowData *data)
                               "Prefer light");
 
     gtk_box_pack_start(GTK_BOX(cursor_box),
-                       data->cursor_combo,
+                       data->cursor_chooser->button,
                        TRUE,
                        TRUE,
                        0);
@@ -884,6 +1202,16 @@ create_components_page(WindowData *data)
                        data->cursor_size,
                        FALSE,
                        FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(wallpaper_box),
+                       data->wallpaper_preview,
+                       FALSE,
+                       FALSE,
+                       0);
+    gtk_box_pack_start(GTK_BOX(wallpaper_box),
+                       data->wallpaper_button,
+                       TRUE,
+                       TRUE,
                        0);
     gtk_box_pack_start(GTK_BOX(accent_box),
                        data->accent_switch,
@@ -908,17 +1236,17 @@ create_components_page(WindowData *data)
                       make_preference_row(
                           "2  Cinnamon desktop",
                           "Panel, menu, tray, notifications, popovers and OSD colors. Layout is never changed.",
-                          data->cinnamon_combo));
+                          data->cinnamon_chooser->button));
     gtk_container_add(GTK_CONTAINER(list),
                       make_preference_row(
                           "3  Applications",
                           "GTK 3 and XApp controls, windows and title bars.",
-                          data->gtk_combo));
+                          data->gtk_chooser->button));
     gtk_container_add(GTK_CONTAINER(list),
                       make_preference_row(
                           "4  Icons",
                           "Application, symbolic and Nemo file icons.",
-                          data->icon_combo));
+                          data->icon_chooser->button));
     gtk_container_add(GTK_CONTAINER(list),
                       make_preference_row(
                           "5  Cursor",
@@ -933,7 +1261,7 @@ create_components_page(WindowData *data)
                       make_preference_row(
                           "1  Wallpaper",
                           "Choose one local background image. Multi-monitor behavior is left to Cinnamon.",
-                          data->wallpaper_button));
+                          wallpaper_box));
     gtk_container_add(GTK_CONTAINER(list),
                       make_preference_row(
                           "7.1  Light/dark preference",
@@ -974,9 +1302,12 @@ create_components_page(WindowData *data)
     gtk_container_add(GTK_CONTAINER(scroll), content);
     gtk_box_pack_start(GTK_BOX(page), scroll, TRUE, TRUE, 0);
 
-    g_signal_connect(data->gtk_combo,
-                     "changed",
-                     G_CALLBACK(on_gtk_combo_changed),
+    theme_chooser_set_changed(data->gtk_chooser,
+                              on_gtk_theme_changed,
+                              data);
+    g_signal_connect(data->wallpaper_button,
+                     "file-set",
+                     G_CALLBACK(on_wallpaper_file_set),
                      data);
     g_signal_connect(data->accent_switch,
                      "notify::active",
@@ -1001,6 +1332,10 @@ static void
 window_data_free(WindowData *data)
 {
     g_clear_pointer(&data->themes, g_ptr_array_unref);
+    theme_chooser_free(data->cinnamon_chooser);
+    theme_chooser_free(data->gtk_chooser);
+    theme_chooser_free(data->icon_chooser);
+    theme_chooser_free(data->cursor_chooser);
     g_free(data);
 }
 

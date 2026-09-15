@@ -29,6 +29,12 @@
   </provides>
   <url type="homepage">https://github.com/The-Specter-X/Theme-Changer</url>
   <releases>
+    <release version="0.3.0" date="2026-09-15">
+      <description>
+        <p>Add lazy visual theme pickers with GTK, Cinnamon, cursor, icon and
+        wallpaper previews before applying a custom composition.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-14">
       <description>
         <p>Add the complete graphical component mixer, selective bundle apply,

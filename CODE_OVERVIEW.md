@@ -20,7 +20,9 @@ flowchart TD
 The GUI and CLI share the same parser, validator, discovery, store and applier.
 There is no second implementation and no shell-command layer. The GUI's
 Components page reads current values through the applier and discovers choices
-through the shared discovery module.
+through the shared discovery module. Theme grids initially show lightweight
+placeholders and load one preview per main-loop iteration, keeping startup and
+interaction responsive.
 
 ## Source tree
 
@@ -28,10 +30,11 @@ through the shared discovery module.
 |---|---|
 | `src/atm-theme.[ch]` | Parse `theme.ini`, enforce schema 1, validate paths/assets, serialize theme JSON |
 | `src/atm-components.[ch]` | Stable numbered map and selector parser |
-| `src/atm-discovery.[ch]` | Discover and classify installed Cinnamon, GTK, icon and cursor themes |
+| `src/atm-discovery.[ch]` | Discover, classify and resolve installed Cinnamon, GTK, icon and cursor themes |
+| `src/atm-preview.[ch]` | Load Cinnamon-compatible thumbnails and themed folder-icon previews |
 | `src/atm-store.[ch]` | Discover bundles, import with limits, expose asset directories safely |
 | `src/atm-applier.[ch]` | Snapshot, apply, rollback and restore through typed GSettings |
-| `src/atm-window.[ch]` | Two-page GTK 3/XApp GUI: bundle selection and installed-component mixer |
+| `src/atm-window.[ch]` | Two-page GTK 3/XApp GUI with lazy visual component choosers |
 | `src/atm-cli.c` | Agent-friendly list/map/validate/apply/restore interface |
 | `src/main.c` | `GtkApplication` entry point |
 | `data/` | Desktop entry, AppStream metadata and application icon |

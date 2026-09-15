@@ -103,6 +103,12 @@ test_discovery_and_missing_reference(void)
     themes = atm_discovery_list(ATM_DISCOVERY_GTK);
     g_assert_true(ptr_array_contains_string(themes, "DiscoveredGtk"));
     g_assert_true(atm_discovery_has(ATM_DISCOVERY_GTK, "DiscoveredGtk"));
+    {
+        g_autofree gchar *discovered =
+            atm_discovery_get_path(ATM_DISCOVERY_GTK, "DiscoveredGtk");
+        g_assert_nonnull(discovered);
+        g_assert_true(g_str_has_suffix(discovered, "/DiscoveredGtk"));
+    }
     g_assert_true(atm_discovery_gtk_has_lock_style("DiscoveredGtk"));
 
     missing.id = (gchar *) "missing-reference";

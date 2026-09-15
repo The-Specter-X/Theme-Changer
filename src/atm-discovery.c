@@ -94,8 +94,38 @@ candidate_matches(const gchar *candidate, AtmDiscoveryKind kind)
     }
 }
 
+static gboolean
+builtin_cinnamon_matches(const gchar *path)
+{
+    g_autofree gchar *css = g_build_filename(path, "cinnamon.css", NULL);
+    return g_file_test(css, G_FILE_TEST_IS_REGULAR);
+}
+
 static gchar *
-find_theme_path(AtmDiscoveryKind kind, const gchar *name)
+find_builtin_cinnamon(void)
+{
+    const gchar * const *system_dirs = g_get_system_data_dirs();
+    g_autofree gchar *path = NULL;
+    guint i;
+
+    path = g_build_filename(g_get_user_data_dir(),
+                            "cinnamon", "theme", NULL);
+    if (builtin_cinnamon_matches(path))
+        return g_steal_pointer(&path);
+    g_clear_pointer(&path, g_free);
+
+    for (i = 0; system_dirs[i] != NULL; i++) {
+        path = g_build_filename(system_dirs[i],
+                                "cinnamon", "theme", NULL);
+        if (builtin_cinnamon_matches(path))
+            return g_steal_pointer(&path);
+        g_clear_pointer(&path, g_free);
+    }
+    return NULL;
+}
+
+gchar *
+atm_discovery_get_path(AtmDiscoveryKind kind, const gchar *name)
 {
     g_autoptr(GPtrArray) roots = NULL;
     guint i;
@@ -103,6 +133,10 @@ find_theme_path(AtmDiscoveryKind kind, const gchar *name)
     if (name == NULL || *name == '\0' ||
         strchr(name, G_DIR_SEPARATOR) != NULL)
         return NULL;
+
+    if (kind == ATM_DISCOVERY_CINNAMON &&
+        g_strcmp0(name, "cinnamon") == 0)
+        return find_builtin_cinnamon();
 
     roots = get_roots(kind);
     for (i = 0; i < roots->len; i++) {
@@ -137,6 +171,12 @@ atm_discovery_list(AtmDiscoveryKind kind)
         }
     }
 
+    if (kind == ATM_DISCOVERY_CINNAMON) {
+        g_autofree gchar *builtin = find_builtin_cinnamon();
+        if (builtin != NULL)
+            g_hash_table_add(names, g_strdup("cinnamon"));
+    }
+
     {
         GHashTableIter iter;
         gpointer key;
@@ -152,7 +192,7 @@ atm_discovery_list(AtmDiscoveryKind kind)
 gboolean
 atm_discovery_has(AtmDiscoveryKind kind, const gchar *name)
 {
-    g_autofree gchar *path = find_theme_path(kind, name);
+    g_autofree gchar *path = atm_discovery_get_path(kind, name);
     return path != NULL;
 }
 
@@ -244,7 +284,7 @@ css_tree_has_lock_style(const gchar *path, guint depth)
 gboolean
 atm_discovery_gtk_has_lock_style(const gchar *name)
 {
-    g_autofree gchar *path = find_theme_path(ATM_DISCOVERY_GTK, name);
+    g_autofree gchar *path = atm_discovery_get_path(ATM_DISCOVERY_GTK, name);
     g_autofree gchar *gtk_path = NULL;
 
     if (path == NULL)

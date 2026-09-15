@@ -47,14 +47,20 @@ page reports system themes referenced by a bundle that are missing before the
 user presses Apply.
 
 The **Components** page is the unified controller for the current desktop. It
-discovers compatible themes from the standard user and system data locations
-and provides controls for:
+discovers compatible themes from the standard user and system data locations.
+Each theme control opens a visual grid and changes only the pending selection;
+nothing is applied until **Apply Appearance** is pressed. GTK, Cinnamon and
+cursor previews use the same per-theme and shared thumbnail conventions as
+Cinnamon Settings. Icon themes render their own folder icon. Preview grids load
+incrementally so large installed collections do not block application startup.
+
+It provides controls for:
 
 - Cinnamon desktop theme
 - GTK 3/XApp application theme
 - Icon theme
 - Cursor theme and logical size
-- Wallpaper
+- Wallpaper with a local image preview
 - Light/dark preference
 - Optional accent preference
 - Screen-lock styling status for the selected GTK theme
