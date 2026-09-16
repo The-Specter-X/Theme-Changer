@@ -63,7 +63,7 @@ main(int argc, char **argv)
     g_autoptr(GError) error = NULL;
     GtkWidget *window;
     GtkWidget *chooser;
-    GtkWidget *popover;
+    GtkPopover *popover;
     GtkWidget *content;
     GtkWidget *flowbox;
     GList *tiles;
@@ -90,7 +90,7 @@ main(int argc, char **argv)
 
     popover = gtk_menu_button_get_popover(GTK_MENU_BUTTON(chooser));
     g_assert_nonnull(popover);
-    gtk_menu_button_popup(GTK_MENU_BUTTON(chooser));
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(chooser), TRUE);
     drain_events();
 
     content = gtk_bin_get_child(GTK_BIN(popover));
@@ -115,7 +115,7 @@ main(int argc, char **argv)
     g_assert_nonnull(tiles);
     g_list_free(tiles);
 
-    gtk_popover_popdown(GTK_POPOVER(popover));
+    gtk_popover_popdown(popover);
     gtk_widget_destroy(window);
     drain_events();
     return 0;
