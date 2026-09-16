@@ -18,7 +18,7 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             appstream build-essential desktop-file-utils libglib2.0-dev \
-            libgtk-3-dev libxapp-dev meson ninja-build pkg-config
+            libgtk-3-dev libxapp-dev meson ninja-build pkg-config xauth xvfb
       - name: Configure
         run: meson setup build --prefix=/usr -Db_sanitize=address,undefined
       - name: Compile

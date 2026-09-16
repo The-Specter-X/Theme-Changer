@@ -38,13 +38,13 @@ get_roots(AtmDiscoveryKind kind)
     g_autofree gchar *path = NULL;
     guint i;
 
-    path = g_build_filename(g_get_user_data_dir(), category, NULL);
-    add_root(roots, path);
-    g_clear_pointer(&path, g_free);
-
     path = g_build_filename(g_get_home_dir(),
                             g_str_equal(category, "icons") ? ".icons" : ".themes",
                             NULL);
+    add_root(roots, path);
+    g_clear_pointer(&path, g_free);
+
+    path = g_build_filename(g_get_user_data_dir(), category, NULL);
     add_root(roots, path);
     g_clear_pointer(&path, g_free);
 
@@ -57,14 +57,56 @@ get_roots(AtmDiscoveryKind kind)
 }
 
 static gboolean
+theme_is_blacklisted(const gchar *name)
+{
+    static const gchar *blacklist[] = {
+        "gnome", "hicolor", "adwaita", "adwaita-dark",
+        "adwaitalegacy", "highcontrast", "epapirus",
+        "epapirus-dark", "ubuntu-mono", "ubuntu-mono-dark",
+        "ubuntu-mono-light", "loginicons", "humanity",
+        "humanity-dark", NULL
+    };
+    g_autofree gchar *lower = g_ascii_strdown(name, -1);
+    guint i;
+
+    for (i = 0; blacklist[i] != NULL; i++) {
+        if (g_str_equal(lower, blacklist[i]))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static gboolean
 icon_index_has_directories(const gchar *index_path)
 {
     g_autoptr(GKeyFile) key_file = g_key_file_new();
 
     if (!g_key_file_load_from_file(key_file, index_path, G_KEY_FILE_NONE, NULL))
         return FALSE;
+    if (g_key_file_get_boolean(key_file, "Icon Theme", "Hidden", NULL))
+        return FALSE;
     return g_key_file_has_key(key_file, "Icon Theme", "Directories", NULL) ||
            g_key_file_has_key(key_file, "Icon Theme", "ScaledDirectories", NULL);
+}
+
+static gboolean
+gtk_theme_matches(const gchar *candidate)
+{
+    g_autoptr(GDir) directory = g_dir_open(candidate, 0, NULL);
+    const gchar *entry;
+
+    if (directory == NULL)
+        return FALSE;
+    while ((entry = g_dir_read_name(directory)) != NULL) {
+        g_autofree gchar *css = NULL;
+
+        if (!g_str_has_prefix(entry, "gtk-3."))
+            continue;
+        css = g_build_filename(candidate, entry, "gtk.css", NULL);
+        if (g_file_test(css, G_FILE_TEST_IS_REGULAR))
+            return TRUE;
+    }
+    return FALSE;
 }
 
 static gboolean
@@ -78,8 +120,7 @@ candidate_matches(const gchar *candidate, AtmDiscoveryKind kind)
         required = g_build_filename(candidate, "cinnamon", "cinnamon.css", NULL);
         return g_file_test(required, G_FILE_TEST_IS_REGULAR);
     case ATM_DISCOVERY_GTK:
-        required = g_build_filename(candidate, "gtk-3.0", "gtk.css", NULL);
-        return g_file_test(required, G_FILE_TEST_IS_REGULAR);
+        return gtk_theme_matches(candidate);
     case ATM_DISCOVERY_ICONS:
         index_path = g_build_filename(candidate, "index.theme", NULL);
         return g_file_test(index_path, G_FILE_TEST_IS_REGULAR) &&
@@ -166,7 +207,8 @@ atm_discovery_list(AtmDiscoveryKind kind)
         while ((entry = g_dir_read_name(directory)) != NULL) {
             g_autofree gchar *candidate =
                 g_build_filename(g_ptr_array_index(roots, i), entry, NULL);
-            if (candidate_matches(candidate, kind))
+            if (!theme_is_blacklisted(entry) &&
+                candidate_matches(candidate, kind))
                 g_hash_table_add(names, g_strdup(entry));
         }
     }

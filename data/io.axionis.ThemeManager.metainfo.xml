@@ -29,6 +29,12 @@
   </provides>
   <url type="homepage">https://github.com/The-Specter-X/Theme-Changer</url>
   <releases>
+    <release version="0.3.1" date="2026-09-16">
+      <description>
+        <p>Fix GTK 3 preview-popover visibility and add automated GUI coverage
+        for picker content and dimensions.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-09-15">
       <description>
         <p>Add lazy visual theme pickers with GTK, Cinnamon, cursor, icon and

@@ -17,6 +17,24 @@ find_existing_file(const gchar *base,
             return g_steal_pointer(&candidate);
         g_clear_pointer(&candidate, g_free);
 
+        if (g_str_equal(suffix, "gtk-3.0")) {
+            g_autoptr(GDir) directory = g_dir_open(base, 0, NULL);
+            const gchar *entry;
+
+            while (directory != NULL &&
+                   (entry = g_dir_read_name(directory)) != NULL) {
+                if (!g_str_has_prefix(entry, "gtk-3."))
+                    continue;
+                candidate = g_build_filename(base,
+                                             entry,
+                                             "thumbnail.png",
+                                             NULL);
+                if (g_file_test(candidate, G_FILE_TEST_IS_REGULAR))
+                    return g_steal_pointer(&candidate);
+                g_clear_pointer(&candidate, g_free);
+            }
+        }
+
         candidate = g_build_filename(base, "thumbnail.png", NULL);
         if (g_file_test(candidate, G_FILE_TEST_IS_REGULAR))
             return g_steal_pointer(&candidate);

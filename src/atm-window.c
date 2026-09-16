@@ -32,6 +32,7 @@ struct _ThemeChooser {
     GtkWidget *button_image;
     GtkWidget *button_label;
     GtkWidget *popover;
+    GtkWidget *scroll;
     GtkWidget *flowbox;
     GPtrArray *available;
     GPtrArray *tiles;
@@ -673,11 +674,9 @@ theme_tile_new(ThemeChooser *chooser, const gchar *name)
 }
 
 static void
-on_theme_popover_show(GtkWidget *popover, gpointer user_data)
+theme_chooser_populate(ThemeChooser *chooser)
 {
-    ThemeChooser *chooser = user_data;
     guint i;
-    (void) popover;
 
     if (chooser->loaded)
         return;
@@ -695,8 +694,20 @@ on_theme_popover_show(GtkWidget *popover, gpointer user_data)
         g_ptr_array_add(chooser->tiles, button);
     }
     theme_chooser_update_tiles(chooser);
-    gtk_widget_show_all(chooser->flowbox);
-    if (chooser->tiles->len > 0)
+}
+
+static void
+on_theme_popover_show(GtkWidget *popover, gpointer user_data)
+{
+    ThemeChooser *chooser = user_data;
+    (void) popover;
+
+    theme_chooser_populate(chooser);
+    gtk_widget_show_all(chooser->scroll);
+    gtk_widget_queue_resize(chooser->popover);
+
+    if (chooser->idle_id == 0 &&
+        chooser->preview_index < chooser->tiles->len)
         chooser->idle_id =
             g_idle_add(theme_chooser_load_next_preview, chooser);
 }
@@ -706,13 +717,14 @@ theme_chooser_new(AtmDiscoveryKind kind)
 {
     ThemeChooser *chooser = g_new0(ThemeChooser, 1);
     GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
 
     chooser->kind = kind;
     chooser->button = gtk_menu_button_new();
+    gtk_widget_set_name(chooser->button, "theme-preview-chooser");
     chooser->button_image = gtk_image_new();
     chooser->button_label = gtk_label_new("Choose a theme");
     chooser->popover = gtk_popover_new(chooser->button);
+    chooser->scroll = gtk_scrolled_window_new(NULL, NULL);
     chooser->flowbox = gtk_flow_box_new();
     chooser->tiles = g_ptr_array_new();
 
@@ -739,15 +751,16 @@ theme_chooser_new(AtmDiscoveryKind kind)
     gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(chooser->flowbox), 8);
     gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(chooser->flowbox), 8);
     gtk_container_set_border_width(GTK_CONTAINER(chooser->flowbox), 10);
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(chooser->scroll),
                                    GTK_POLICY_NEVER,
                                    GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_min_content_width(GTK_SCROLLED_WINDOW(scroll),
-                                              700);
-    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(scroll),
-                                               420);
-    gtk_container_add(GTK_CONTAINER(scroll), chooser->flowbox);
-    gtk_container_add(GTK_CONTAINER(chooser->popover), scroll);
+    gtk_scrolled_window_set_min_content_width(
+        GTK_SCROLLED_WINDOW(chooser->scroll), 700);
+    gtk_scrolled_window_set_min_content_height(
+        GTK_SCROLLED_WINDOW(chooser->scroll), 420);
+    gtk_widget_set_size_request(chooser->scroll, 700, 420);
+    gtk_container_add(GTK_CONTAINER(chooser->scroll), chooser->flowbox);
+    gtk_container_add(GTK_CONTAINER(chooser->popover), chooser->scroll);
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(chooser->button),
                                 chooser->popover);
     g_signal_connect(chooser->popover,
@@ -762,6 +775,9 @@ theme_chooser_reload(ThemeChooser *chooser, const gchar *selected)
 {
     theme_chooser_clear_tiles(chooser);
     theme_chooser_set_selected(chooser, selected, FALSE);
+    theme_chooser_populate(chooser);
+    gtk_widget_show_all(chooser->scroll);
+    gtk_widget_queue_resize(chooser->popover);
 }
 
 static gchar *

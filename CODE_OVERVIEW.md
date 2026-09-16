@@ -153,7 +153,9 @@ activated when component 3 is applied.
 test executable with the in-memory GSettings backend. Tests cover valid parsing,
 path traversal rejection, stable selector behavior, installed-theme discovery,
 missing external reference rejection, executable content rejection, complete
-apply, and undo. CI also builds the Debian package
+apply, and undo. An Xvfb-backed GTK test opens a visual chooser and verifies its
+popover content is visible, populated and allocated at usable dimensions. CI
+also builds the Debian package
 so installed paths and declared dependencies are exercised.
 
 ## Adding a component in a later schema
