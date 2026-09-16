@@ -20,9 +20,10 @@ flowchart TD
 The GUI and CLI share the same parser, validator, discovery, store and applier.
 There is no second implementation and no shell-command layer. The GUI's
 Components page reads current values through the applier and discovers choices
-through the shared discovery module. Theme grids initially show lightweight
-placeholders and load one preview per main-loop iteration, keeping startup and
-interaction responsive.
+through the shared discovery module. Theme grids are discovered only when
+opened, initially show lightweight placeholders, and decode previews on a
+paced low-priority timer. Scaled previews and missing results are cached for
+the session; closing a picker stops its remaining preview work.
 
 ## Source tree
 
@@ -81,9 +82,11 @@ sequenceDiagram
     end
 ```
 
-GSettings policy locks are checked before each write. An application already
-running may keep its old GTK resources until restarted; this is normal GTK
-behavior, not a failed transaction.
+GSettings policy locks are checked before each changed write. Values already
+equal to the requested value are skipped so Cinnamon does not reload a theme
+component unnecessarily. An application already running may keep its old GTK
+resources until restarted; this is normal GTK behavior, not a failed
+transaction.
 
 ## Storage and discovery map
 

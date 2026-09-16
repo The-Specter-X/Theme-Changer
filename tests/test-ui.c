@@ -63,6 +63,7 @@ main(int argc, char **argv)
     g_autoptr(GError) error = NULL;
     GtkWidget *window;
     GtkWidget *chooser;
+    GtkWidget *cursor_chooser;
     GtkPopover *popover;
     GtkWidget *content;
     GtkWidget *flowbox;
@@ -87,6 +88,15 @@ main(int argc, char **argv)
     chooser = find_named_widget(window, "theme-preview-chooser");
     g_assert_nonnull(chooser);
     g_assert_true(GTK_IS_MENU_BUTTON(chooser));
+
+    cursor_chooser = find_named_widget(window, "cursor-theme-chooser");
+    g_assert_nonnull(cursor_chooser);
+    g_assert_true(GTK_IS_MENU_BUTTON(cursor_chooser));
+    gtk_widget_get_size_request(cursor_chooser,
+                                &minimum_width,
+                                &minimum_height);
+    g_assert_cmpint(minimum_width, ==, 210);
+    g_assert_cmpint(minimum_height, ==, 56);
 
     popover = gtk_menu_button_get_popover(GTK_MENU_BUTTON(chooser));
     g_assert_nonnull(popover);

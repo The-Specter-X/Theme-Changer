@@ -1,3 +1,13 @@
+axionis-theme-manager (0.3.2) unstable; urgency=medium
+
+  * Reduce the cursor chooser and cursor preview tile dimensions.
+  * Pace preview decoding and stop it when a picker is closed.
+  * Cache previews and prefer Cinnamon's generated icon thumbnails.
+  * Defer theme scans until a picker is opened.
+  * Avoid writing unchanged GSettings values and repeated lock CSS scans.
+
+ -- Specter <thespecter@tuta.com>  Wed, 16 Sep 2026 14:00:00 +0000
+
 axionis-theme-manager (0.3.1) unstable; urgency=medium
 
   * Fix invisible popover contents in GTK 3 theme preview pickers.

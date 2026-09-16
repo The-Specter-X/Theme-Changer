@@ -69,7 +69,12 @@ typedef struct {
     GtkWidget *accent_switch;
     GtkWidget *accent_button;
     GtkWidget *lock_status;
+    GHashTable *lock_style_cache;
 } WindowData;
+
+#define PREVIEW_LOAD_INTERVAL_MS 32
+#define CURSOR_CHOOSER_WIDTH 210
+#define CURSOR_CHOOSER_HEIGHT 56
 
 static void refresh_themes(WindowData *data);
 static void load_current_controls(WindowData *data);
@@ -573,9 +578,9 @@ theme_chooser_set_selected(ThemeChooser *chooser,
     set_image_preview(chooser->button_image,
                       chooser->kind,
                       name,
-                      chooser->kind == ATM_DISCOVERY_ICONS ||
-                      chooser->kind == ATM_DISCOVERY_CURSOR ? 48 : 72,
-                      48);
+                      chooser->kind == ATM_DISCOVERY_CURSOR ? 36 :
+                      chooser->kind == ATM_DISCOVERY_ICONS ? 48 : 72,
+                      chooser->kind == ATM_DISCOVERY_CURSOR ? 36 : 48);
     theme_chooser_update_tiles(chooser);
 
     if (notify && chooser->changed != NULL)
@@ -603,7 +608,8 @@ theme_chooser_load_next_preview(gpointer user_data)
     gint width;
     gint height;
 
-    if (chooser->preview_index >= chooser->tiles->len) {
+    if (!gtk_widget_get_visible(chooser->popover) ||
+        chooser->preview_index >= chooser->tiles->len) {
         chooser->idle_id = 0;
         return G_SOURCE_REMOVE;
     }
@@ -611,10 +617,10 @@ theme_chooser_load_next_preview(gpointer user_data)
     button = g_ptr_array_index(chooser->tiles, chooser->preview_index++);
     image = g_object_get_data(G_OBJECT(button), "preview-image");
     name = g_object_get_data(G_OBJECT(button), "theme-name");
-    width = chooser->kind == ATM_DISCOVERY_ICONS ||
-            chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 140;
-    height = chooser->kind == ATM_DISCOVERY_ICONS ||
-             chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 80;
+    width = chooser->kind == ATM_DISCOVERY_CURSOR ? 48 :
+            chooser->kind == ATM_DISCOVERY_ICONS ? 64 : 140;
+    height = chooser->kind == ATM_DISCOVERY_CURSOR ? 48 :
+             chooser->kind == ATM_DISCOVERY_ICONS ? 64 : 80;
     set_image_preview(image, chooser->kind, name, width, height);
     return G_SOURCE_CONTINUE;
 }
@@ -639,6 +645,29 @@ theme_chooser_clear_tiles(ThemeChooser *chooser)
     chooser->loaded = FALSE;
 }
 
+static gint
+theme_tile_width(AtmDiscoveryKind kind)
+{
+    if (kind == ATM_DISCOVERY_CURSOR)
+        return 100;
+    if (kind == ATM_DISCOVERY_ICONS)
+        return 112;
+    return 168;
+}
+
+static gint
+theme_tile_height(AtmDiscoveryKind kind)
+{
+    return kind == ATM_DISCOVERY_CURSOR ? 104 : 118;
+}
+
+static gint
+theme_tile_placeholder_size(AtmDiscoveryKind kind)
+{
+    return kind == ATM_DISCOVERY_CURSOR ? 48 :
+           kind == ATM_DISCOVERY_ICONS ? 64 : 48;
+}
+
 static GtkWidget *
 theme_tile_new(ThemeChooser *chooser, const gchar *name)
 {
@@ -647,16 +676,15 @@ theme_tile_new(ThemeChooser *chooser, const gchar *name)
     GtkWidget *image = gtk_image_new_from_icon_name(
         fallback_icon_name(chooser->kind), GTK_ICON_SIZE_DIALOG);
     GtkWidget *label = gtk_label_new(name);
-    gint width = chooser->kind == ATM_DISCOVERY_ICONS ||
-                 chooser->kind == ATM_DISCOVERY_CURSOR ? 112 : 168;
 
     gtk_image_set_pixel_size(GTK_IMAGE(image),
-                             chooser->kind == ATM_DISCOVERY_ICONS ||
-                             chooser->kind == ATM_DISCOVERY_CURSOR ? 64 : 48);
+                             theme_tile_placeholder_size(chooser->kind));
     gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(label), 20);
     gtk_widget_set_tooltip_text(button, name);
-    gtk_widget_set_size_request(button, width, 118);
+    gtk_widget_set_size_request(button,
+                                theme_tile_width(chooser->kind),
+                                theme_tile_height(chooser->kind));
     gtk_container_set_border_width(GTK_CONTAINER(box), 6);
     gtk_box_pack_start(GTK_BOX(box), image, TRUE, TRUE, 0);
     gtk_box_pack_end(GTK_BOX(box), label, FALSE, FALSE, 0);
@@ -709,7 +737,23 @@ on_theme_popover_show(GtkWidget *popover, gpointer user_data)
     if (chooser->idle_id == 0 &&
         chooser->preview_index < chooser->tiles->len)
         chooser->idle_id =
-            g_idle_add(theme_chooser_load_next_preview, chooser);
+            g_timeout_add_full(G_PRIORITY_LOW,
+                               PREVIEW_LOAD_INTERVAL_MS,
+                               theme_chooser_load_next_preview,
+                               chooser,
+                               NULL);
+}
+
+static void
+on_theme_popover_closed(GtkPopover *popover, gpointer user_data)
+{
+    ThemeChooser *chooser = user_data;
+    (void) popover;
+
+    if (chooser->idle_id != 0) {
+        g_source_remove(chooser->idle_id);
+        chooser->idle_id = 0;
+    }
 }
 
 static ThemeChooser *
@@ -720,7 +764,10 @@ theme_chooser_new(AtmDiscoveryKind kind)
 
     chooser->kind = kind;
     chooser->button = gtk_menu_button_new();
-    gtk_widget_set_name(chooser->button, "theme-preview-chooser");
+    gtk_widget_set_name(
+        chooser->button,
+        kind == ATM_DISCOVERY_CURSOR ?
+        "cursor-theme-chooser" : "theme-preview-chooser");
     chooser->button_image = gtk_image_new();
     chooser->button_label = gtk_label_new("Choose a theme");
     chooser->popover = gtk_popover_new(chooser->button);
@@ -731,7 +778,10 @@ theme_chooser_new(AtmDiscoveryKind kind)
     gtk_label_set_ellipsize(GTK_LABEL(chooser->button_label),
                             PANGO_ELLIPSIZE_END);
     gtk_label_set_max_width_chars(GTK_LABEL(chooser->button_label), 24);
-    gtk_widget_set_size_request(chooser->button, 270, 64);
+    gtk_widget_set_size_request(
+        chooser->button,
+        kind == ATM_DISCOVERY_CURSOR ? CURSOR_CHOOSER_WIDTH : 270,
+        kind == ATM_DISCOVERY_CURSOR ? CURSOR_CHOOSER_HEIGHT : 64);
     gtk_box_pack_start(GTK_BOX(button_box),
                        chooser->button_image,
                        FALSE,
@@ -761,11 +811,16 @@ theme_chooser_new(AtmDiscoveryKind kind)
     gtk_widget_set_size_request(chooser->scroll, 700, 420);
     gtk_container_add(GTK_CONTAINER(chooser->scroll), chooser->flowbox);
     gtk_container_add(GTK_CONTAINER(chooser->popover), chooser->scroll);
+    gtk_widget_show_all(chooser->scroll);
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(chooser->button),
                                 chooser->popover);
     g_signal_connect(chooser->popover,
                      "show",
                      G_CALLBACK(on_theme_popover_show),
+                     chooser);
+    g_signal_connect(chooser->popover,
+                     "closed",
+                     G_CALLBACK(on_theme_popover_closed),
                      chooser);
     return chooser;
 }
@@ -775,9 +830,6 @@ theme_chooser_reload(ThemeChooser *chooser, const gchar *selected)
 {
     theme_chooser_clear_tiles(chooser);
     theme_chooser_set_selected(chooser, selected, FALSE);
-    theme_chooser_populate(chooser);
-    gtk_widget_show_all(chooser->scroll);
-    gtk_widget_queue_resize(chooser->popover);
 }
 
 static gchar *
@@ -813,13 +865,28 @@ update_lock_status(WindowData *data)
 {
     const gchar *gtk_theme = data->gtk_chooser->selected;
     g_autofree gchar *message = NULL;
+    gpointer cached;
+    gboolean has_style;
 
     if (gtk_theme == NULL) {
         gtk_label_set_text(GTK_LABEL(data->lock_status),
                            "No application theme is available.");
         return;
     }
-    if (atm_discovery_gtk_has_lock_style(gtk_theme)) {
+
+    if (g_hash_table_lookup_extended(data->lock_style_cache,
+                                     gtk_theme,
+                                     NULL,
+                                     &cached)) {
+        has_style = GPOINTER_TO_UINT(cached) == 2;
+    } else {
+        has_style = atm_discovery_gtk_has_lock_style(gtk_theme);
+        g_hash_table_insert(data->lock_style_cache,
+                            g_strdup(gtk_theme),
+                            GUINT_TO_POINTER(has_style ? 2 : 1));
+    }
+
+    if (has_style) {
         message = g_strdup_printf(
             "%s supplies Cinnamon screen-lock styling (.csstage detected).",
             gtk_theme);
@@ -1013,6 +1080,9 @@ on_reload_clicked(GtkButton *button, gpointer user_data)
 {
     WindowData *data = user_data;
     (void) button;
+
+    atm_preview_cache_clear();
+    g_hash_table_remove_all(data->lock_style_cache);
     load_current_controls(data);
 }
 
@@ -1348,6 +1418,7 @@ static void
 window_data_free(WindowData *data)
 {
     g_clear_pointer(&data->themes, g_ptr_array_unref);
+    g_clear_pointer(&data->lock_style_cache, g_hash_table_unref);
     theme_chooser_free(data->cinnamon_chooser);
     theme_chooser_free(data->gtk_chooser);
     theme_chooser_free(data->icon_chooser);
@@ -1363,6 +1434,8 @@ atm_window_new(GtkApplication *application)
     GtkWidget *bundle_page;
     GtkWidget *components_page;
 
+    data->lock_style_cache =
+        g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     data->window = GTK_WIDGET(window);
     gtk_window_set_application(GTK_WINDOW(window), application);
     gtk_window_set_title(GTK_WINDOW(window), "Axionis Theme Manager");

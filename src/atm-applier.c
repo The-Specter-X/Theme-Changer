@@ -79,6 +79,10 @@ set_string_checked(GSettings *settings,
                    const gchar *value,
                    GError **error)
 {
+    g_autofree gchar *current = g_settings_get_string(settings, key);
+
+    if (g_strcmp0(current, value) == 0)
+        return TRUE;
     if (!g_settings_is_writable(settings, key)) {
         g_set_error(error,
                     ATM_APPLIER_ERROR,
@@ -104,6 +108,8 @@ set_int_checked(GSettings *settings,
                 gint value,
                 GError **error)
 {
+    if (g_settings_get_int(settings, key) == value)
+        return TRUE;
     if (!g_settings_is_writable(settings, key)) {
         g_set_error(error,
                     ATM_APPLIER_ERROR,

@@ -29,6 +29,12 @@
   </provides>
   <url type="homepage">https://github.com/The-Specter-X/Theme-Changer</url>
   <releases>
+    <release version="0.3.2" date="2026-09-16">
+      <description>
+        <p>Reduce cursor chooser dimensions and smooth preview/apply CPU use
+        with paced lazy loading, thumbnail caching and unchanged-value checks.</p>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-09-16">
       <description>
         <p>Fix GTK 3 preview-popover visibility and add automated GUI coverage
